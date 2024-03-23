@@ -1,0 +1,1007 @@
+### OPA Audits
+
+  
+rm(list = ls())
+start.time <- Sys.time()
+
+library(tidyverse)
+library(ggtext)
+library(officer)
+library(rvg)
+library(glue)
+library(here)
+#library(qdap)
+
+
+### Loading data
+
+
+
+data <- here("./Downloaded file") %>% list.files(pattern = ".csv$", full.names = TRUE) %>%
+  read.csv(.)
+  
+### Preparing data
+colnames(data) <- c("CONSULTANT", "MONTH", "YEAR", "MRN", "SN", "FORM", "DOCUMENTED", "LEGIBILITY", "COMPLETENESS")
+
+data <- data %>% mutate(TYPE = case_when(FORM %in% c("Patients vital signs, weight and height, pain and fall risk assessment, are documented by a nurse as required.",
+                                                    "Allergies for drugs, food and others are documented on the space provided as required.") ~ "N",
+                                         FORM %in% c("Any Significant Medication Taken at Home are documented in the space provided",
+                                                     "Any Investigation results Accompanied by a patient are documented in the space provided",
+                                                     "Significant history (Including presenting complain, past medical/Surgical history, Drug or treatment history, and personal history).",
+                                                     "Physical Findings are documented as required",
+                                                     "Diagnosis/Clinical Impression is documented as required",
+                                                     "Management plan and specific instruction/education for patient/family .",
+                                                     "Laboratory investigations are documented as required on the tests/service column.",
+                                                     "Medication prescribed are documented on the Pharmacy section as required.") ~ "P",
+                                         TRUE ~ ""))
+
+
+##Truncating form names
+data <- data %>% mutate(FORM = case_when(FORM == "Patients vital signs, weight and height, pain and fall risk assessment, are documented by a nurse as required." ~
+                                           "Vital signs, weight, height, pain \n and fall risk assessment",
+                                         FORM == "Allergies for drugs, food and others are documented on the space provided as required." ~
+                                           "Food and Drug Allergies",
+                                         FORM == "Any Significant Medication Taken at Home are documented in the space provided" ~
+                                           "Home medications",
+                                         FORM == "Any Investigation results Accompanied by a patient are documented in the space provided" ~
+                                           "Investigation results from Home",
+                                         FORM == "Significant history (Including presenting complain, past medical/Surgical history, Drug or treatment history, and personal history)." ~
+                                           "Chief Complaint(s) & History (Medical Hx, \n Surgical Hx, Personal Hx, Drug and Treatment)",
+                                         FORM == "Physical Findings are documented as required" ~ "Physical Examination Findings",
+                                         FORM == "Diagnosis/Clinical Impression is documented as required" ~ "Diagnosis/ Clinical Impression",
+                                         FORM == "Management plan and specific instruction/education for patient/family ." ~ "Management Plan & Education/ Instructions",
+                                         FORM == "Laboratory investigations are documented as required on the tests/service column." ~ "Lab Investigations",
+                                         FORM == "Medication prescribed are documented on the Pharmacy section as required." ~ "Prescribed Medications",
+                                         TRUE ~ FORM))
+
+
+data <- data %>% filter(!is.na(DOCUMENTED))
+data <- data %>% filter(DOCUMENTED %in% c("D", "ND"))
+
+# data <- data %>% mutate_at(c(LEGIBLE, COMPLETE),
+#   
+#   ~case_when(DOCUMENTED = "ND" ~ "-",
+#              TRUE ~ .)
+#   
+# )
+
+data <- data %>% mutate(LEGIBILITY = case_when(DOCUMENTED == "ND" ~ "-",
+                                               TRUE ~ LEGIBILITY),
+                        COMPLETENESS = case_when(DOCUMENTED == "ND" ~ "-",
+                                                 TRUE ~ COMPLETENESS))
+
+data <- data %>% mutate(MET = case_when(DOCUMENTED == "D" & LEGIBILITY == "Y" & COMPLETENESS == "Y" ~ "M", TRUE ~ "NM"))
+
+data <- data %>% mutate(CONSULTANT = case_when(CONSULTANT %in% c("Dr. Fatma Bakshi", "Dr. Fatima Bakshi") ~ "Dr. Fatma Bakshi",
+                                               TRUE ~ CONSULTANT))
+
+##Adding a department based on the Consultant's name
+
+data <- data %>% mutate(DEPARTMENT = case_when(
+  
+  CONSULTANT %in% c("Dr. Kamran Hameed", "Dr. Casmir Wambura", "Dr. Robert Mvungi", "Dr. Mustafa Bapumia",
+                    "Prof. Yasin Mgonda", "Dr. Eric Aris", "Dr. Andrew Foi", "Dr. Khadija Shebe",
+                    "Dr. Fatma Bakshi", "Dr. Mandela Makakala", "Dr. Harrison Chuwa", "Dr. Adatia Aleesha",
+                    "Dr. Samina Somji", "Dr. Mbonea Salehe Yonazi", "Dr. Kamal Merali", "Dr. Philip Adebayo",
+                    "Dr. Kigocha Okeng'o", "Dr. Tuzo Lyuu", "Dr. Saning'o Sangeti", "Dr. Grace Shayo",
+                    "Dr. Francis Furia") ~ "Medicine",
+  
+  CONSULTANT %in% c("Dr. Kubhoja Sulende", "Dr. Mbise Roger Lewis", "Dr. Maria Bulimba", "Dr. Hajaj Salum",
+                    "Dr. Mariam Noorani", "Dr. Sonal Patel", "Dr. Yaser Abdallah", "Dr. Mohamedraza Ibrahim",
+                    "Dr. Edward Kija", "Dr. Nahida Walli", "Dr. Aleya Remtullah",
+                    "Dr. Naomi Mwamanenge") ~ "Paediatrics",
+  
+  CONSULTANT %in% c("Dr. Athar Ali", "Dr. Moshi Ndeserua", "Dr. Aidan Tumaini Njau", "Dr. Rajeev Kumar",
+                    "Dr. Dilawer Padhani", "Dr. Ally Mwanga", "Dr. Mwajabu Mbaga", "Dr. Julius Dinda", "Dr. Edwin Mrema",
+                    "Dr. Mughisha Clement", "Dr. Christopher Mwansasu", "Dr. Enica Richard",
+                    "Dr. Elias Lymo", "Dr. Felix Mrita", "Dr. Samwel Nungu", "Dr. Edwin Liyombo",
+                    "Dr. William Sianga", "Dr. Paul Nyaulike", "Dr. Victor Mashamba", "Dr. Herman Wella",
+                    "Dr. Everst Nwayawa", "Dr. Mavura", "Dr. Alex Joseph", "Dr. Bajsar Ally",
+                    "Dr. Mugisha Clement", "Dr. Bryson Mcharo", "Dr. Ali Akbar Zehri", "Dr. Hussam Soomro",
+                    "Dr. Kimu Njiku") ~ "Surgery",
+  
+  CONSULTANT %in% c("Dr. Munawar Kaguta", "Dr. Ernest Mdachi", "Dr. Lynn Moshi", "Dr. Abeid Muzdalifat",
+                    "Dr. Miriam Mgonja", "Dr. Shweta Jaiswal", "Dr. Hussein Kidanto",
+                    "Dr. Rahma Bakari") ~ "Obstetrics & Gynaecology",
+  
+  CONSULTANT %in% c("Dr. Riaz Rattansi") ~ "Family Medicine",
+  TRUE ~ ""
+  
+))
+
+
+##Adding a quarter column
+
+data <- data %>% mutate(QUARTER = case_when(MONTH %in% c("January", "February", "March") ~ "Q1",
+                                            MONTH %in% c("April", "May", "June") ~ "Q2",
+                                            MONTH %in% c("July", "August", "September") ~ "Q3",
+                                            MONTH %in% c("October", "November", "December") ~ "Q4"))
+
+#Concatenating Quarter & Year
+#data <- data %>% mutate(QUARTER = paste(QUARTER, YEAR))
+
+##Truncating month names
+data <- data %>% mutate(MONTH = substr(MONTH, 1,3))
+
+#Arranging columns
+
+data <- data %>% select(CONSULTANT, DEPARTMENT, MONTH, YEAR, QUARTER, MRN, SN, FORM,
+                        TYPE, DOCUMENTED, LEGIBILITY, COMPLETENESS, MET)
+
+
+
+
+### Converting all column values to "Y" and "N" for DOCUMENTED, LEGIBILITY, COMPLETENESS AND MET columns
+
+converter <- function(dataframe, column){
+  
+  column = rlang::enquo(column)
+  
+  dataframe %>% mutate(!!column := case_when(!!column %in% c("D", "Y", "M") ~ "Y",
+                                             !!column %in% c("ND", "N", "NM") ~ "N"))
+  
+}
+
+
+
+data <- converter(data, DOCUMENTED)
+data <- converter(data, LEGIBILITY)
+data <- converter(data, COMPLETENESS)
+data <- converter(data, MET)
+
+
+# data %>% mutate_at(c("DOCUMENTED", "LEGIBILITY", "COMPLETENESS", "MET"),
+#                    ~qdap::multigsub(pattern = c("D", "Y", "M", "ND", "N", "NM"),
+#                                     replacement = c("Y", "Y", "Y", "N", "N", "N"),
+#                                     text.var = .))
+
+
+#Most current quarter & year
+
+thequarter <- if("Q4" %in% unique(data$QUARTER)){
+  
+  "Q4"
+  
+} else if("Q3" %in% unique(data$QUARTER)) {
+  
+  "Q3"
+  
+} else if("Q2" %in% unique(data$QUARTER)) {
+  
+  "Q2"
+  
+} else {
+  
+  "Q1"
+}
+
+
+theyear <- unique(data$YEAR)
+
+
+
+### Analysis
+## Per department
+
+for(department in unique(data$DEPARTMENT)){
+  
+  data1 <- data %>% filter((DEPARTMENT == department) & (TYPE == "P"))
+  
+
+## Functions
+##Control charts - for departments
+#Preparing the data
+  
+  prepare.control <- function(dataframe, group, column){
+    
+    group_quosure <- rlang::enquo(group)
+    col_quosure <- rlang::enquo(column)
+    
+    intermediate <- dataframe %>% select(!!group_quosure, MONTH, TYPE, !!col_quosure) %>%
+      group_by(!!group_quosure, MONTH, !!col_quosure) %>% 
+      filter(!!col_quosure %in% c("Y", "N")) %>% summarize(Frequency = n()) %>%
+      mutate(Percentage = (100*Frequency)/sum(Frequency))
+    
+    
+    intermediate1 <-intermediate %>% filter(!!col_quosure == "N" & Percentage == 100)
+    intermediate <- intermediate %>% filter(!!col_quosure == "Y")
+    intermediate1 <- intermediate1 %>% mutate(!!col_quosure := "Y") %>%
+      mutate(Frequency = 0) %>%
+      mutate(Percentage = 0)
+    
+    intermediate <- rbind(intermediate, intermediate1)
+    
+    intermediate <- intermediate %>% mutate(MONTH = factor(MONTH, levels = c("Jan", "Feb", "Mar",
+                                                                             "Apr", "May", "Jun",
+                                                                             "Jul", "Aug", "Sep",
+                                                                             "Oct", "Nov", "Dec")))
+    
+    intermediate <- intermediate %>% arrange(desc(Percentage)) %>% mutate_if(is.numeric, round, 1)
+    
+    rm(intermediate1) 
+    return(intermediate)
+    
+  }
+  
+  
+  #Create the control charts
+  
+  finalize.control <- function(dataframe, benchmark){
+    dataframe %>% mutate(Mean = mean(dataframe$Percentage)) %>% 
+      mutate(UCL = Mean + 2*(sd(dataframe$Percentage)),
+             LCL = Mean - 2*(sd(dataframe$Percentage)),
+             Benchmark = benchmark) %>% mutate_if(is.numeric, round, 1)
+  }
+  
+  
+  #Output the control charts dataframes
+  documented <- prepare.control(data1, DEPARTMENT, DOCUMENTED) %>% finalize.control(., 100)
+  
+  legible <- prepare.control(data1, DEPARTMENT, LEGIBILITY) %>% finalize.control(., 90)
+  
+  complete <- prepare.control(data1, DEPARTMENT, COMPLETENESS) %>% finalize.control(., 90)
+  
+  overall <- prepare.control(data1, DEPARTMENT, MET) %>% finalize.control(., 90)
+  
+  
+  ##Draw the graphs
+  #Function for drawing control charts
+  
+  controlchart.plot <- function(dataframe){
+    
+    ggplot(data = dataframe, aes(x = MONTH, y = Percentage, group = 1)) +
+      geom_point(shape = 21, color = "black", fill= "#69b3a2", size = 2) +
+      geom_line() + geom_hline(aes(yintercept = UCL, colour = "UCL")) +
+      geom_hline(aes(yintercept = Benchmark, colour = "Benchmark")) +
+      geom_hline(aes(yintercept = Mean, colour = "Mean")) +
+      geom_hline(aes(yintercept = LCL, colour = "LCL")) +
+      scale_y_continuous(breaks = seq(-20,200,10)) +
+      
+      geom_text(label = dataframe$Percentage,
+                vjust = -2,
+                size = 2,
+                position = position_dodge(width = 1)) +
+      
+      theme(plot.title = element_text(hjust = 0.5),
+            axis.line = element_line(),
+            panel.background = element_rect(fill = "gray98"),
+            legend.background = element_rect(),
+            legend.title = element_blank(),
+            legend.position = "bottom") +
+      xlab("Month") + ylab("Compliance (%)")
+    
+  }
+  
+  
+  # Drawing the graphs
+  
+  documented.controlchart <- controlchart.plot(documented)
+  
+  legible.controlchart <- controlchart.plot(legible)
+  
+  complete.controlchart <- controlchart.plot(complete)
+  
+  overall.controlchart <- controlchart.plot(overall)
+  
+  
+  
+  ## Graphs per OPA Section
+  
+  wrangle.it <- function(dataframe, column){
+    
+    col_quosure <- rlang::enquo(column)
+    
+    intermediate <- dataframe %>%
+      
+      filter(QUARTER == {thequarter}) %>%                       ###Remember this
+      select(QUARTER, YEAR, FORM, TYPE, !!col_quosure) %>%
+      group_by(QUARTER, YEAR, FORM, TYPE, !!col_quosure) %>%
+      summarise(Count = n()) %>% filter(!!col_quosure %in% c("Y", "N")) %>%
+      mutate(Percentage = (100*Count)/sum(Count))
+    
+    intermediate1 <-intermediate %>% filter(!!col_quosure == "N" & Percentage == 100)
+    intermediate <- intermediate %>% filter(!!col_quosure == "Y")
+    intermediate1 <- intermediate1 %>% mutate(!!col_quosure := "Y") %>%
+      mutate(Count = 0) %>%
+      mutate(Percentage = 0)
+    
+    intermediate <- rbind(intermediate, intermediate1)
+    intermediate <- intermediate %>% arrange(desc(Percentage)) %>% mutate_if(is.numeric, round, 1)
+    
+    rm(intermediate1) 
+    return(intermediate)
+    
+  }
+  
+  
+  #Graphs - Aesthetics for all scores
+  
+  prepare.it <- function(dataframe, benchmark){
+    
+    dataframe %>%
+      
+      mutate(Category = case_when(Percentage < 50 ~ "Below 50",
+                                  (Percentage >= 50 & Percentage < benchmark) ~ "Above 50 but below benchmark",
+                                  Percentage >= benchmark ~ "At or above benchmark")) %>%
+      
+      mutate(Category = factor(Category, levels = c("At or above benchmark",
+                                                    "Above 50 but below benchmark",
+                                                    "Below 50")))
+    
+  }
+  
+  
+  #Graphing - plotting it and adding more layers
+  
+  plot.it <- function(dataframe){
+    
+    dataframe %>% mutate(QUARTER = paste(QUARTER, YEAR)) %>% 
+    ggplot(., aes(x = reorder(FORM, Percentage), y = Percentage, fill = Category)) +
+      geom_col() +
+      coord_flip() + 
+      labs(x = "OPA Section", y = "Compliance (%)") +
+      theme(legend.position = "bottom", legend.title = element_blank(),
+            plot.title = element_text(hjust = 0.5), axis.line = element_line(),
+            panel.background = element_rect(fill = "gray96"),
+            axis.text.x = element_text(hjust = 0.5, vjust = 0.8)) +
+      scale_fill_manual(values = c("At or above benchmark" = "#00b159",
+                                   "Above 50 but below benchmark" = "orange",
+                                   "Below 50" = "red")) +
+      scale_y_continuous(breaks = seq(0, 100, 10)) +
+      geom_text(label = dataframe$Percentage,
+                hjust = 0.5,  
+                size = 2,
+                position = position_dodge(width = 1)) +
+      
+      facet_wrap(~QUARTER)
+    
+  }
+  
+  
+  ##The dataframes & graphs
+  
+  #Documented
+  documented_documents <- wrangle.it(data1, DOCUMENTED) %>% prepare.it(., 100) %>%
+    plot.it()
+  
+  
+  #Legible
+  legible_documents <- wrangle.it(data1, LEGIBILITY) %>% prepare.it(., 90) %>% 
+    plot.it()
+  
+  
+  #Complete
+  complete_documents <- wrangle.it(data1, COMPLETENESS) %>% prepare.it(., 90) %>% 
+    plot.it()
+  
+  
+  #Overall
+  met_documents <- wrangle.it(data1, MET) %>% prepare.it(., 90) %>% 
+    plot.it()
+  
+  ###Exporting departmental graphs
+  #Setting the working directory
+  
+  #Creating Output directory for the folder automatically
+  walk(c(glue(here("Output", {theyear})), glue(here("Output", {theyear}, {thequarter}))), dir.create)
+  
+  #Creating Output directory for the department
+  if(dir.exists(glue(here("./Output/{theyear}/{thequarter}/{department}"))) == FALSE){
+    
+  dir.create(glue(here("./Output/{theyear}/{thequarter}/{department}")))
+    
+  }
+  
+  
+  #Saving the pptx
+  read_pptx(here("./R Code/Template.pptx")) %>%
+    ph_with(value = block_list(fpar(ftext(glue("                                                               
+                                               {department} - OPA Documentation Compliance for {thequarter} {theyear}"),
+                                          prop = fp_text(font.size = 18, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type = "subTitle")) %>% 
+
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('{department} - Availability of Required Documents'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = documented.controlchart, location = ph_location_type(type="body")) %>%
+
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Documented Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = documented_documents, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('{department} - Legibility'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = legible.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Legibility Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = legible_documents, location = ph_location_type(type="body")) %>%
+
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('{department} - Completeness'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = complete.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Completeness Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = complete_documents, location = ph_location_type(type="body")) %>%
+
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('{department} - Overall'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = overall.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Overall Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = met_documents, location = ph_location_type(type="body")) %>%
+    
+    print(glue("./Output/{theyear}/{thequarter}/{department}/{department} - Open Charts Results.pptx"))
+  
+
+  
+  ### For Consultants
+  for(consultant in unique(data1$CONSULTANT)){
+    
+    data2 <- data1 %>% filter(CONSULTANT == consultant)
+    
+   
+  ## Control charts  
+  # Output the control charts dataframes
+    documented <- prepare.control(data2, CONSULTANT, DOCUMENTED) %>% finalize.control(., 100)
+    
+    legible <- prepare.control(data2, CONSULTANT, LEGIBILITY) %>% finalize.control(., 90)
+    
+    complete <- prepare.control(data2, CONSULTANT, COMPLETENESS) %>% finalize.control(., 90)
+    
+    overall <- prepare.control(data2, CONSULTANT, MET) %>% finalize.control(., 90)
+     
+    
+  # Drawing the graphs
+    
+    documented.controlchart <- controlchart.plot(documented)
+    
+    legible.controlchart <- controlchart.plot(legible)
+    
+    complete.controlchart <- controlchart.plot(complete)
+    
+    overall.controlchart <- controlchart.plot(overall)
+    
+    
+  ## Graphs per OPA Section
+  # The dataframes & graphs
+    
+    #Documented
+    documented_documents <- wrangle.it(data2, DOCUMENTED) %>% prepare.it(., 100) %>%
+      plot.it()
+    
+    
+    #Legible
+    legible_documents <- wrangle.it(data2, LEGIBILITY) %>% prepare.it(., 90) %>% 
+      plot.it()
+    
+    
+    #Complete
+    complete_documents <- wrangle.it(data2, COMPLETENESS) %>% prepare.it(., 90) %>% 
+      plot.it()
+    
+    
+    #Overall
+    met_documents <- wrangle.it(data2, MET) %>% prepare.it(., 90) %>% 
+      plot.it()
+    
+###Exporting graphs per Consultant
+    if(dir.exists(glue(here("./Output/{theyear}/{thequarter}/{department}/Consultants"))) == FALSE){
+      
+    dir.create(glue(here("./Output/{theyear}/{thequarter}/{department}/Consultants")))
+      
+    }
+    
+    #Saving the pptx
+    read_pptx(here("./R Code/Template.pptx")) %>%
+      ph_with(value = block_list(fpar(ftext(glue("                                                               
+                                               {consultant} - OPA Documentation Compliance for {thequarter} {theyear}"),
+                                            prop = fp_text(font.size = 18, font.family = "Helvetica")),
+                                      fp_p = fp_par(text.align = "center"))),
+              location = ph_location_type(type = "subTitle")) %>% 
+      
+      add_slide(layout='Title and Content',master='Office Theme') %>%
+      ph_with(value = block_list(fpar(ftext(glue('{consultant} - Availability of Required Documents'),
+                                            prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                      fp_p = fp_par(text.align = "center"))),
+              location = ph_location_type(type="title")) %>%
+      ph_with(value = documented.controlchart, location = ph_location_type(type="body")) %>%
+      
+      add_slide(layout='Title and Content',master='Office Theme') %>%
+      ph_with(value = block_list(fpar(ftext(glue('Documented Scores per OPA Section'),
+                                            prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                      fp_p = fp_par(text.align = "center"))),
+              location = ph_location_type(type="title")) %>%
+      ph_with(value = documented_documents, location = ph_location_type(type="body")) %>%
+      
+      add_slide(layout='Title and Content',master='Office Theme') %>%
+      ph_with(value = block_list(fpar(ftext(glue('{consultant} - Legibility'),
+                                            prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                      fp_p = fp_par(text.align = "center"))),
+              location = ph_location_type(type="title")) %>%
+      ph_with(value = legible.controlchart, location = ph_location_type(type="body")) %>%
+      
+      add_slide(layout='Title and Content',master='Office Theme') %>%
+      ph_with(value = block_list(fpar(ftext(glue('Legibility Scores per OPA Section'),
+                                            prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                      fp_p = fp_par(text.align = "center"))),
+              location = ph_location_type(type="title")) %>%
+      ph_with(value = legible_documents, location = ph_location_type(type="body")) %>%
+      
+      add_slide(layout='Title and Content',master='Office Theme') %>%
+      ph_with(value = block_list(fpar(ftext(glue('{consultant} - Completeness'),
+                                            prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                      fp_p = fp_par(text.align = "center"))),
+              location = ph_location_type(type="title")) %>%
+      ph_with(value = complete.controlchart, location = ph_location_type(type="body")) %>%
+      
+      add_slide(layout='Title and Content',master='Office Theme') %>%
+      ph_with(value = block_list(fpar(ftext(glue('Completeness Scores per OPA Section'),
+                                            prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                      fp_p = fp_par(text.align = "center"))),
+              location = ph_location_type(type="title")) %>%
+      ph_with(value = complete_documents, location = ph_location_type(type="body")) %>%
+      
+      add_slide(layout='Title and Content',master='Office Theme') %>%
+      ph_with(value = block_list(fpar(ftext(glue('{consultant} - Overall'),
+                                            prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                      fp_p = fp_par(text.align = "center"))),
+              location = ph_location_type(type="title")) %>%
+      ph_with(value = overall.controlchart, location = ph_location_type(type="body")) %>%
+      
+      add_slide(layout='Title and Content',master='Office Theme') %>%
+      ph_with(value = block_list(fpar(ftext(glue('Overall Scores per OPA Section'),
+                                            prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                      fp_p = fp_par(text.align = "center"))),
+              location = ph_location_type(type="title")) %>%
+      ph_with(value = met_documents, location = ph_location_type(type="body")) %>%
+      
+      print(glue("./Output/{theyear}/{thequarter}/{department}/Consultants/{consultant} - Open Charts Results.pptx"))
+    
+  }
+  
+}
+
+
+### FMC Nurses
+
+{
+
+nurses <- data %>% filter(TYPE == "N")
+
+  ## Functions
+  ##Control charts
+  #Preparing the data
+  
+  prepare.control <- function(dataframe, column){
+    
+    col_quosure <- rlang::enquo(column)
+    
+    intermediate <- dataframe %>% select(MONTH, TYPE, !!col_quosure) %>% group_by(MONTH, !!col_quosure) %>% 
+      filter(!!col_quosure %in% c("Y", "N")) %>% summarize(Frequency = n()) %>%
+      mutate(Percentage = (100*Frequency)/sum(Frequency))
+    
+    
+    intermediate1 <-intermediate %>% filter(!!col_quosure == "N" & Percentage == 100)
+    intermediate <- intermediate %>% filter(!!col_quosure == "Y")
+    intermediate1 <- intermediate1 %>% mutate(!!col_quosure := "Y") %>%
+      mutate(Frequency = 0) %>%
+      mutate(Percentage = 0)
+    
+    intermediate <- rbind(intermediate, intermediate1)
+    
+    intermediate <- intermediate %>% mutate(MONTH = factor(MONTH, levels = c("Jan", "Feb", "Mar",
+                                                                             "Apr", "May", "Jun",
+                                                                             "Jul", "Aug", "Sep",
+                                                                             "Oct", "Nov", "Dec")))
+    
+    intermediate <- intermediate %>% arrange(desc(Percentage)) %>% mutate_if(is.numeric, round, 1)
+    
+    rm(intermediate1) 
+    return(intermediate)
+    
+  }
+  
+  
+  #Create the control charts
+  
+  finalize.control <- function(dataframe, benchmark){
+    dataframe %>% mutate(Mean = mean(dataframe$Percentage)) %>% 
+      mutate(UCL = Mean + 2*(sd(dataframe$Percentage)),
+             LCL = Mean - 2*(sd(dataframe$Percentage)),
+             Benchmark = benchmark) %>% mutate_if(is.numeric, round, 1)
+  }
+  
+  
+  #Output the control charts dataframes
+  documented <- prepare.control(nurses, DOCUMENTED) %>% finalize.control(., 100)
+  
+  legible <- prepare.control(nurses, LEGIBILITY) %>% finalize.control(., 90)
+  
+  complete <- prepare.control(nurses, COMPLETENESS) %>% finalize.control(., 90)
+  
+  overall <- prepare.control(nurses, MET) %>% finalize.control(., 90)
+  
+  
+  ##Draw the graphs
+  #Function for drawing control charts
+  
+  controlchart.plot <- function(dataframe){
+    
+    ggplot(data = dataframe, aes(x = MONTH, y = Percentage, group = 1)) +
+      geom_point(shape = 21, color = "black", fill= "#69b3a2", size = 2) +
+      geom_line() + geom_hline(aes(yintercept = UCL, colour = "UCL")) +
+      geom_hline(aes(yintercept = Benchmark, colour = "Benchmark")) +
+      geom_hline(aes(yintercept = Mean, colour = "Mean")) +
+      geom_hline(aes(yintercept = LCL, colour = "LCL")) +
+      scale_y_continuous(breaks = seq(-20,200,10)) +
+      
+      geom_text(label = dataframe$Percentage,
+                vjust = -2,
+                size = 2,
+                position = position_dodge(width = 1)) +
+      
+      theme(plot.title = element_text(hjust = 0.5),
+            axis.line = element_line(),
+            panel.background = element_rect(fill = "gray98"),
+            legend.background = element_rect(),
+            legend.title = element_blank(),
+            legend.position = "bottom") +
+      xlab("Month") + ylab("Compliance (%)")
+    
+  }
+  
+  
+  # Drawing the graphs
+  
+  documented.controlchart <- controlchart.plot(documented)
+  
+  legible.controlchart <- controlchart.plot(legible)
+  
+  complete.controlchart <- controlchart.plot(complete)
+  
+  overall.controlchart <- controlchart.plot(overall)
+  
+  
+  
+  ## Graphs per OPA Section
+  
+  wrangle.it <- function(dataframe, column){
+    
+    col_quosure <- rlang::enquo(column)
+    
+    intermediate <- dataframe %>%
+      
+      filter(QUARTER == {thequarter}) %>%
+      select(QUARTER, YEAR, FORM, TYPE, !!col_quosure) %>%
+      group_by(QUARTER, YEAR, FORM, TYPE, !!col_quosure) %>%
+      summarise(Count = n()) %>% filter(!!col_quosure %in% c("Y", "N")) %>%
+      mutate(Percentage = (100*Count)/sum(Count))
+    
+    intermediate1 <-intermediate %>% filter(!!col_quosure == "N" & Percentage == 100)
+    intermediate <- intermediate %>% filter(!!col_quosure == "Y")
+    intermediate1 <- intermediate1 %>% mutate(!!col_quosure := "Y") %>%
+      mutate(Count = 0) %>%
+      mutate(Percentage = 0)
+    
+    intermediate <- rbind(intermediate, intermediate1)
+    intermediate <- intermediate %>% arrange(desc(Percentage)) %>% mutate_if(is.numeric, round, 1)
+    
+    rm(intermediate1) 
+    return(intermediate)
+    
+  }
+  
+  
+  #Graphs - Aesthetics for all scores
+  
+  prepare.it <- function(dataframe, benchmark){
+    
+    dataframe %>%
+      
+      mutate(Category = case_when(Percentage < 50 ~ "Below 50",
+                                  (Percentage >= 50 & Percentage < benchmark) ~ "Above 50 but below benchmark",
+                                  Percentage >= benchmark ~ "At or above benchmark")) %>%
+      
+      mutate(Category = factor(Category, levels = c("At or above benchmark",
+                                                    "Above 50 but below benchmark",
+                                                    "Below 50")))
+    
+  }
+  
+  
+  #Graphing - plotting it and adding more layers
+  
+  plot.it <- function(dataframe){
+    
+    dataframe %>% mutate(QUARTER = paste(QUARTER, YEAR)) %>% 
+      ggplot(., aes(x = reorder(FORM, Percentage), y = Percentage, fill = Category)) +
+      geom_col() +
+      coord_flip() + 
+      labs(x = "OPA Section", y = "Compliance (%)") +
+      theme(legend.position = "bottom", legend.title = element_blank(),
+            plot.title = element_text(hjust = 0.5), axis.line = element_line(),
+            panel.background = element_rect(fill = "gray96"),
+            axis.text.x = element_text(hjust = 0.5, vjust = 0.8)) +
+      scale_fill_manual(values = c("At or above benchmark" = "#00b159",
+                                   "Above 50 but below benchmark" = "orange",
+                                   "Below 50" = "red")) +
+      scale_y_continuous(breaks = seq(0, 100, 10)) +
+      geom_text(label = dataframe$Percentage,
+                hjust = 0.5,  
+                size = 2,
+                position = position_dodge(width = 1)) +
+      
+      facet_wrap(~QUARTER)
+    
+  }
+  
+  
+  ##The dataframes & graphs
+  
+  #Documented
+  documented_documents <- wrangle.it(nurses, DOCUMENTED) %>% prepare.it(., 100) %>%
+    plot.it()
+  
+  
+  #Legible
+  legible_documents <- wrangle.it(nurses, LEGIBILITY) %>% prepare.it(., 90) %>% 
+    plot.it()
+  
+  
+  #Complete
+  complete_documents <- wrangle.it(nurses, COMPLETENESS) %>% prepare.it(., 90) %>% 
+    plot.it()
+  
+  
+  #Overall
+  met_documents <- wrangle.it(nurses, MET) %>% prepare.it(., 90) %>% 
+    plot.it()
+  
+  
+  ###Exporting the FMC Nurses graphs
+  #Setting the working directory
+  if(dir.exists(glue(here("./Output/{theyear}/{thequarter}/FMC Nurses"))) == FALSE){
+    
+  dir.create(glue(here("./Output/{theyear}/{thequarter}/FMC Nurses")))
+    
+  }
+  
+  #Saving the pptx
+  read_pptx(here("./R Code/Template.pptx")) %>%
+    ph_with(value = block_list(fpar(ftext(glue("                                                               
+                                               FMC Nurses - OPA Documentation Compliance for {thequarter} {theyear}"),
+                                          prop = fp_text(font.size = 18, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type = "subTitle")) %>% 
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('FMC Nurses - Availability of Required Documents'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = documented.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Documented Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = documented_documents, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('FMC Nurses - Legibility'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = legible.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Legibility Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = legible_documents, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('FMC Nurses - Completeness'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = complete.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Completeness Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = complete_documents, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('FMC Nurses - Overall'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = overall.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Overall Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = met_documents, location = ph_location_type(type="body")) %>%
+    
+    print(glue("./Output/{theyear}/{thequarter}/FMC Nurses/Nurses - Outpatient Open Charts Audit Results.pptx"))
+  
+  
+
+}
+
+
+### Institutional
+{
+  #Copy the data dataset to institutional
+  
+  institutional <- data
+  
+  
+  
+  ### Reusing the same functions as for the nursing graphs
+  ##Control charts
+  
+  #Control charts dataframes
+  documented <- prepare.control(institutional, DOCUMENTED) %>% finalize.control(., 100)
+  
+  legible <- prepare.control(institutional, LEGIBILITY) %>% finalize.control(., 90)
+  
+  complete <- prepare.control(institutional, COMPLETENESS) %>% finalize.control(., 90)
+  
+  overall <- prepare.control(institutional, MET) %>% finalize.control(., 90)
+  
+  
+  #Control charts graphs
+  
+  documented.controlchart <- controlchart.plot(documented)
+  
+  legible.controlchart <- controlchart.plot(legible)
+  
+  complete.controlchart <- controlchart.plot(complete)
+  
+  overall.controlchart <- controlchart.plot(overall)
+  
+  
+  ##Graphs per OPA section
+  
+  #Documented
+  documented_documents <- wrangle.it(institutional, DOCUMENTED) %>% prepare.it(., 100) %>%
+    plot.it()
+  
+  
+  #Legible
+  legible_documents <- wrangle.it(institutional, LEGIBILITY) %>% prepare.it(., 90) %>% 
+    plot.it()
+  
+  
+  #Complete
+  complete_documents <- wrangle.it(institutional, COMPLETENESS) %>% prepare.it(., 90) %>% 
+    plot.it()
+  
+  
+  #Overall
+  met_documents <- wrangle.it(institutional, MET) %>% prepare.it(., 90) %>% 
+    plot.it()
+  
+  
+  ###Exporting institutional graphs
+  #Setting the working directory
+  if(dir.exists(glue("./Output/{theyear}/{thequarter}/Institutional")) == FALSE){
+    
+  dir.create(glue("./Output/{theyear}/{thequarter}/Institutional"))
+  }
+  
+  
+  #Saving the pptx
+  read_pptx(here("./R Code/Template.pptx")) %>%
+    ph_with(value = block_list(fpar(ftext(glue("                                                               
+                                               Institutional OPA Documentation Compliance for {thequarter} {theyear}"),
+                                          prop = fp_text(font.size = 18, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type = "subTitle")) %>% 
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Institutional - Availability of Required Documents'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = documented.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Documented Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = documented_documents, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Institutional - Legibility'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = legible.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Legibility Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = legible_documents, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Institutional - Completeness'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = complete.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Completeness Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = complete_documents, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Institutional - Overall'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = overall.controlchart, location = ph_location_type(type="body")) %>%
+    
+    add_slide(layout='Title and Content',master='Office Theme') %>%
+    ph_with(value = block_list(fpar(ftext(glue('Overall Scores per OPA Section'),
+                                          prop = fp_text(font.size = 22, font.family = "Helvetica")),
+                                    fp_p = fp_par(text.align = "center"))),
+            location = ph_location_type(type="title")) %>%
+    ph_with(value = met_documents, location = ph_location_type(type="body")) %>%
+    
+    print(glue("./Output/{theyear}/{thequarter}/Institutional/Institutional - Outpatient Open Charts Audit Results.pptx"))
+  
+  
+  
+}
+
+end.time <- Sys.time()
+
+time.diff <- round(end.time - start.time, 1)
+
+
+
+
+rm(list = setdiff(ls(), "time.diff"))
+print(time.diff)
